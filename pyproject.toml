@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stateful-long-running-agent"
+version = "0.1.0"
+description = "Temporal-checkpointed workflows that survive crashes — resume a 24h task cleanly after kill -9."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Lionel Sim", email = "lionel@theaicapitol.com" }]
+keywords = ["agents", "durable-execution", "checkpoint", "temporal", "workflow"]
+classifiers = ["Programming Language :: Python :: 3", "License :: OSI Approved :: MIT License"]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/lionelsimai/stateful-long-running-agent"
+Repository = "https://github.com/lionelsimai/stateful-long-running-agent"
+Issues = "https://github.com/lionelsimai/stateful-long-running-agent/issues"
+
+[project.scripts]
+stateful-agent = "stateful_agent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
