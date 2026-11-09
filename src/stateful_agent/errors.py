@@ -15,3 +15,11 @@ class StepFailedError(WorkflowError):
 
 class SimulatedCrashError(WorkflowError):
     """Raised by tests/examples to simulate kill -9 (process death)."""
+
+
+class RunLockedError(WorkflowError):
+    """Raised when another live process already holds the run's lock."""
+
+
+class CheckpointConflictError(WorkflowError):
+    """Raised when a checkpoint write conflicts with different content."""

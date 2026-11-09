@@ -4,22 +4,33 @@
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 
-**Temporal-checkpointed workflows that survive crashes — resume a 24h task cleanly after `kill -9`.**
+**Checkpointed workflows that survive crashes — resume a 24h task cleanly after `kill -9`.**
 
 **Target:** 24h task resumes cleanly after kill -9.
 **Shows:** You build durable systems not fragile demos.
 
 ## Problem → Solution
-Long agent jobs die the way all long jobs die: deploy, OOM, laptop sleep, `kill -9` — and a naive agent restarts from zero, re-paying and re-doing hours of work (or worse, double-charging a side effect). This engine checkpoints to SQLite after *every* step, keys each step idempotently, and resumes exactly where it stopped. No Temporal server needed — the durable-execution pattern, implemented locally, with the Temporal mapping documented.
+Long agent jobs die the way all long jobs die: deploy, OOM, laptop sleep, `kill -9` — and a naive agent restarts from zero, re-paying and re-doing hours of work (or worse, double-charging a side effect). This engine checkpoints to SQLite around *every* step, records each step's start *before* it runs, and resumes exactly where it stopped. No Temporal server needed — the durable-execution pattern, implemented locally, with the Temporal mapping documented.
+
+## The guarantee, stated precisely
+**At-least-once execution with idempotent replay.** A step whose checkpoint
+committed is never re-executed. A step in flight when the process died runs
+again on resume — with the *same* idempotency key, derived from the
+canonicalised context values and passed into the step via
+`ctx["_idempotency_key"]`. A step that honours its key (the demo steps do)
+applies its side effect exactly once; a step that ignores the key may apply
+its effect more than once. Earlier versions of this README implied
+"effectively-once" effects — that claim was removed in 0.1.1 because the
+engine alone cannot provide it; the key mechanism can, per step.
 
 ## Architecture
 ```mermaid
 flowchart LR
-  CLI[CLI run/resume/status] --> E[WorkflowEngine]
+  CLI[CLI run/resume/status] --> E[WorkflowEngine<br/>topological order + per-run lock]
   E --> V{Checkpoint exists?}
   V -->|yes| SKIP[Skip + restore output]
-  V -->|no| RUN[Run step]
-  RUN --> C[(SQLite WAL checkpoint<br/>+ idempotency key)]
+  V -->|no| RUN[Record step-start<br/>run step with idempotency key]
+  RUN --> C[(SQLite WAL + FULL sync<br/>checked checkpoint write)]
   C --> E
 ```
 Full detail + Temporal mapping table: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
@@ -42,13 +53,19 @@ run=demo1 status=completed executed=ingest,clean,chunk,embed,summarise,publish s
 
 $ python examples/crash_test.py
 worker killed with SIGKILL (returncode=-9)
-checkpoints survived kill -9: ['ingest']
-resume: status=completed executed=['clean', 'chunk', 'embed', 'summarise', 'publish'] skipped=['ingest']
+checkpoints survived kill -9: ['ingest', 'clean']
+resume: status=completed executed=['chunk', 'embed', 'summarise', 'publish'] skipped=['ingest', 'clean']
+side effects: ['ingest', 'clean', 'chunk', 'embed', 'summarise', 'publish'] (total=6)
 CRASH TEST PASS
 ```
 
 ## Benchmarks
-Headline metric is binary and verified, not estimated: a worker process is spawned, SIGKILLed mid-workflow, and the run must complete on resume with **zero re-executed steps**.
+The crash test is deterministic, not timed: the worker blocks *after* its
+2nd checkpoint commits and writes a ready flag, the parent SIGKILLs it, and
+the test fails loudly unless resume skips exactly those 2 steps and the
+append-only side-effect log ends with each of the 6 steps exactly once.
+It runs in the pytest suite as a real subprocess test and passes 5/5
+consecutive runs.
 ```bash
 python benchmarks/benchmark.py   # wraps the kill -9 crash test
 # target: task resumes cleanly after kill -9 -> PASS
@@ -56,8 +73,8 @@ python benchmarks/benchmark.py   # wraps the kill -9 crash test
 Simulated steps stand in for a 24h task's hours-long steps — the checkpoint/resume mechanics are identical at any step duration, because durability lives in the store, not the step.
 
 ## Honest limitations
-- Single-process, single-writer SQLite — right for one host, not a distributed fleet (that's the step where the documented Temporal mapping takes over).
-- Side effects outside the step's returned dict are the caller's responsibility: make step functions idempotent at the external system too, using the same key.
+- At-least-once, not exactly-once: replayed steps must honour their idempotency key to avoid duplicate external effects (see the guarantee above).
+- Single-process, single-writer SQLite — right for one host, not a distributed fleet (that's the step where the documented Temporal mapping takes over). A per-run lock stops two live processes running the same run; a dead owner's lock is reclaimed.
 - No built-in retries/backoff policy yet (on the roadmap).
 
 ## Roadmap

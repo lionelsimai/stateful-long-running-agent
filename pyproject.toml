@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stateful-long-running-agent"
-version = "0.1.0"
-description = "Temporal-checkpointed workflows that survive crashes — resume a 24h task cleanly after kill -9."
+version = "0.1.1"
+description = "Checkpointed workflows that survive crashes — at-least-once execution with idempotent replay, resuming cleanly after kill -9."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
